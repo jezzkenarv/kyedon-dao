@@ -35,6 +35,11 @@ contract PooledLendingDao {
     uint256 public minReputation = 50;
     uint256 public maxLoanDuration = 365 days;
 
+    modifier onlyDAOmember() {
+        require(isDAOmember[msg.sender], "Only DAO members can perform this action");
+        _;
+    }
+
     constructor() {
         admin = msg.sender;
         isDAOmember[admin] = true;
