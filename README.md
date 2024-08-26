@@ -1,66 +1,28 @@
-## Foundry
+## DAO-Managed Pooled Asset Lending Platform
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Develop a decentralized platform that allows community members to pool assets and offer under-collateralized loans based on social capital.
+Governance and lending decisions will be managed by a decentralized autonomous organization (DAO). 
 
-Foundry consists of:
+Sanity check of features:
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+** Borrowing/Lending features **
 
-## Documentation
+deposit & withdraw functions
+pool balances of individual and total (require each individual to deposit a minimum or uniform deposit for everyone)
+** DAO features **
+create proposal 
+vote on proposal
+execute proposal -> triggers the borrowing functions
+addMember() and removeMember()
 
-https://book.getfoundry.sh/
+** User Credibility features **
 
-## Usage
+reputation scores (for now) and adjusting feature
+getReputation()
+** Loan MGMT features **
+repay function
+getLoanDetails()
 
-### Build
+** Future features **
 
-```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+how can this be scalable? this can be onramped as a venmo app where friends and family can all participate in and pool money for a future spending use case
