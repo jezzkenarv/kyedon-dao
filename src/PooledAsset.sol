@@ -1,124 +1,110 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.8.0 <0.9.0;
 
-contract PooledLendingDao {
+contract RotatingCreditAssociation {
 
-    struct Proposal {
-        address borrower;
-        uint256 amount;
-        string description;
-        uint256 votesFor;
-        uint256 votesAgainst;
-        bool executed;
+    struct Participant {
+        bool isActive;
+        uint256 contributionAmount;
+        uint256 lastContributionRound;
+        bool hasReceivedPayout;
     }
 
-    struct Loan {
-        address borrower;
-        uint256 amount;
+    struct Round {
         uint256 startTime;
-        uint256 duration;
-        bool repaid;
+        uint256 endTime;
+        address payoutRecipient;
+        bool isComplete;
+        uint256 totalContributions;
     }
 
     address public admin;
-    mapping(address => uint256) public poolBalances;
-    uint256 public totalPoolBalance;
-    uint256 public proposalCount;
-    uint256 public loanCount;
+    uint256 public roundDuration;
+    uint256 public contributionAmount;
+    uint256 public currentRound;
+    uint256 public totalParticipants;
 
-    mapping(uint256 => Proposal) public proposals;
-    mapping(uint256 => Loan) public loans;
-
-    mapping(address => uint256) public reputationScores;
+    mapping(address => Participant) public participants;
+    mapping(uint256 => Round) public rounds;
     mapping(address => bool) public isDAOmember;
-    
-    uint256 public minReputation = 50;
-    uint256 public maxLoanDuration = 365 days;
 
     modifier onlyDAOmember() {
         require(isDAOmember[msg.sender], "Only DAO members can perform this action");
         _;
     }
 
-    constructor() {
+    constructor(uint256 _roundDuration, uint256 _contributionAmount) {
         admin = msg.sender;
         isDAOmember[admin] = true;
+        roundDuration = _roundDuration;
+        contributionAmount = _contributionAmount;
+        currentRound = 0;
     }
 
-    function deposit() external payable {
-        require(msg.value > 0, "Must send some ether");
-        poolBalances[msg.sender] += msg.value;
-        totalPoolBalance += msg.value;
-        // emit Deposit(msg.sender, msg.value);
-    }
+    function joinAssociation() external payable {
+        require(!participants[msg.sender].isActive, "Already a participant");
+        require(msg.value == contributionAmount, "Incorrect contribution amount");
 
-    function withdraw(uint256 amount) external {
-        require(poolBalances[msg.sender] >= amount, "Insufficient balance");
-        poolBalances[msg.sender] -= amount;
-        totalPoolBalance -= amount;
-        payable(msg.sender).transfer(amount);
-        // emit Withdrawal(msg.sender, amount);
-    }
-
-    function createProposal(address borrower, uint256 amount, string memory description) external onlyDAOmember {
-        require(reputationScores[borrower] >= minReputation, "Borrower lacks sufficient reputation");
-        require(amount <= totalPoolBalance / 2, "Cannot borrow more than 50% of the pool");
-        
-        proposals[proposalCount] = Proposal({
-            borrower: borrower,
-            amount: amount,
-            description: description,
-            votesFor: 0,
-            votesAgainst: 0,
-            executed: false
+        participants[msg.sender] = Participant({
+            isActive: true,
+            contributionAmount: contributionAmount,
+            lastContributionRound: currentRound,
+            hasReceivedPayout: false
         });
+
+        totalParticipants++;
     }
 
-    function voteOnProposal(uint256 proposalId, bool support) external onlyDAOmember {
-        Proposal storage proposal = proposals[proposalId];
-        require(!proposal.executed, "Proposal already executed");
+    function contribute() external payable {
+        require(participants[msg.sender].isActive, "Not a participant");
+        require(msg.value == contributionAmount, "Incorrect contribution amount");
+        require(participants[msg.sender].lastContributionRound < currentRound, "Already contributed this round");
+
+        participants[msg.sender].lastContributionRound = currentRound;
+        rounds[currentRound].totalContributions += contributionAmount;
+    }
+
+    function startNewRound() external onlyDAOmember {
+        require(block.timestamp >= rounds[currentRound].endTime, "Current round not finished");
         
-        if (support) {
-            proposal.votesFor++;
-        } else {
-            proposal.votesAgainst++;
-        }
-    }
-
-    function executeProposal(uint256 proposalId) external onlyDAOmember {
-        Proposal storage proposal = proposals[proposalId];
-        require(!proposal.executed, "Proposal already executed");
-        require(proposal.votesFor > proposal.votesAgainst, "Proposal not approved");
-
-        proposal.executed = true;
-        loans[loanCount] = Loan({
-            borrower: proposal.borrower,
-            amount: proposal.amount,
+        currentRound++;
+        rounds[currentRound] = Round({
             startTime: block.timestamp,
-            duration: maxLoanDuration,
-            repaid: false
+            endTime: block.timestamp + roundDuration,
+            payoutRecipient: address(0),
+            isComplete: false,
+            totalContributions: 0
         });
-
-        totalPoolBalance -= proposal.amount;
-        loanCount++;
-        emit LoanApproval(proposalId);
-        emit ProposalExecuted(proposalId);
-        
-        payable(proposal.borrower).transfer(proposal.amount);
     }
 
-    function repayLoan(uint256 loanId) external payable {
-        Loan storage loan = loans[loanId];
-        require(msg.sender == loan.borrower, "Not the borrower");
-        require(msg.value >= loan.amount, "Repayment amount too low");
-        require(!loan.repaid, "Loan already repaid");
+    function distributeFunds() external onlyDAOmember {
+        require(rounds[currentRound].totalContributions == contributionAmount * totalParticipants, "Not all participants have contributed");
+        require(!rounds[currentRound].isComplete, "Round already completed");
 
-        loan.repaid = true;
-        poolBalances[address(this)] += msg.value;
-        totalPoolBalance += msg.value;
-        reputationScores[msg.sender] += 10;  // Reward for timely repayment
+        address payoutRecipient = getNextPayoutRecipient();
+        require(payoutRecipient != address(0), "No eligible recipient found");
 
-        // emit LoanRepaid(loanId);
+        rounds[currentRound].payoutRecipient = payoutRecipient;
+        rounds[currentRound].isComplete = true;
+        participants[payoutRecipient].hasReceivedPayout = true;
+
+        payable(payoutRecipient).transfer(rounds[currentRound].totalContributions);
+    }
+
+    function getNextPayoutRecipient() internal view returns (address) {
+        for (uint256 i = 0; i < totalParticipants; i++) {
+            address participant = getParticipantAtIndex(i);
+            if (participants[participant].isActive && !participants[participant].hasReceivedPayout) {
+                return participant;
+            }
+        }
+        return address(0);
+    }
+
+    function getParticipantAtIndex(uint256 index) internal view returns (address) {
+        // This function should be implemented to return the participant address at the given index
+        // For simplicity, we're leaving it unimplemented in this example
+        revert("Not implemented");
     }
 
     function addMember(address newMember) external onlyDAOmember {
@@ -129,23 +115,19 @@ contract PooledLendingDao {
         isDAOmember[member] = false;
     }
 
-    function getReputation(address user) external view returns (uint256) {
-        return reputationScores[user];
+    function leaveAssociation() external {
+        require(participants[msg.sender].isActive, "Not a participant");
+        require(participants[msg.sender].hasReceivedPayout, "Cannot leave before receiving payout");
+
+        participants[msg.sender].isActive = false;
+        totalParticipants--;
     }
 
-    function adjustReputation(address user, int256 change) external onlyDAOmember {
-        uint256 currentReputation = reputationScores[user];
-        if (change < 0) {
-            reputationScores[user] = currentReputation - uint256(-change);
-        } else {
-            reputationScores[user] = currentReputation + uint256(change);
-        }
+    function getParticipantInfo(address participant) external view returns (Participant memory) {
+        return participants[participant];
     }
 
-    function getLoanDetails(uint256 loanId) external view returns (Loan memory) {
-        return loans[loanId];
+    function getRoundInfo(uint256 roundNumber) external view returns (Round memory) {
+        return rounds[roundNumber];
     }
-
-
-    
 }
