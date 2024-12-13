@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.18;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract KyeDaoRotatingRound is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
+
+    error AlreadyParticipant();
 
     IERC20 public token;
     uint256 public totalSupply;
@@ -48,18 +50,19 @@ contract KyeDaoRotatingRound is Ownable, ReentrancyGuard {
     constructor(
         address _tokenAddress,
         uint256 _contributionAmount,
-        uint256 _roundDuration
-    ) {
+        uint256 _roundDuration,
+        address initialOwner
+    ) Ownable(initialOwner) {
         token = IERC20(_tokenAddress);
         contributionAmount = _contributionAmount;
         roundDuration = _roundDuration;
         currentRound = 0;
-        isDAOmember[msg.sender] = true;
+        isDAOmember[initialOwner] = true;
 
         startNewRound();
     }
 
-    function joinAssociation() external nonReentrant {
+    function joinAssociation() external nonReentrant payable {
         if (participants[msg.sender].isActive) revert AlreadyParticipant();
         
         token.safeTransferFrom(msg.sender, address(this), contributionAmount);
@@ -72,20 +75,24 @@ contract KyeDaoRotatingRound is Ownable, ReentrancyGuard {
         totalParticipants++;
         totalSupply += contributionAmount;
 
-        emit Deposit(msg.sender, contributionAmount);
-    }
-
-    function contribute() external nonReentrant {
-        require(participants[msg.sender].isActive, "Not a participant");
-        require(participants[msg.sender].lastContributionRound < currentRound, "Already contributed this round");
-
-        token.safeTransferFrom(msg.sender, address(this), contributionAmount);
         participants[msg.sender].lastContributionRound = currentRound;
         rounds[currentRound].totalContributions += contributionAmount;
         totalSupply += contributionAmount;
 
         emit Deposit(msg.sender, contributionAmount);
     }
+
+    // function contribute() external nonReentrant {
+    //     require(participants[msg.sender].isActive, "Not a participant");
+    //     require(participants[msg.sender].lastContributionRound < currentRound, "Already contributed this round");
+
+    //     token.safeTransferFrom(msg.sender, address(this), contributionAmount);
+    //     participants[msg.sender].lastContributionRound = currentRound;
+    //     rounds[currentRound].totalContributions += contributionAmount;
+    //     totalSupply += contributionAmount;
+
+    //     emit Deposit(msg.sender, contributionAmount);
+    // }
 
     function startNewRound() public onlyDAOmember {
         require(block.timestamp >= rounds[currentRound].endTime, "Current round not finished");
@@ -119,7 +126,7 @@ contract KyeDaoRotatingRound is Ownable, ReentrancyGuard {
         emit PayoutDistributed(payoutRecipient, payoutAmount);
     }
 
-    function getNextPayoutRecipient() internal view returns (address) {
+    function getNextPayoutRecipient() public view returns (address) {
         for (uint256 i = 0; i < totalParticipants; i++) {
             address participant = getParticipantAtIndex(i);
             if (participants[participant].isActive && !participants[participant].hasReceivedPayout) {
@@ -129,7 +136,7 @@ contract KyeDaoRotatingRound is Ownable, ReentrancyGuard {
         return address(0);
     }
 
-    function getParticipantAtIndex(uint256 index) internal view returns (address) {
+    function getParticipantAtIndex(uint256 index) public view returns (address) {
         // Implementation left as an exercise
         revert("Not implemented");
     }
@@ -148,6 +155,8 @@ contract KyeDaoRotatingRound is Ownable, ReentrancyGuard {
 
         emit Withdrawal(msg.sender, balance);
     }
+
+    //////// Getter Functions ////////
 
     function addMember(address newMember) external onlyOwner {
         isDAOmember[newMember] = true;
